@@ -44,8 +44,8 @@
                 class="dev.semanticcodesearch.search.OpenSemanticSearchAction"
                 text="Search Semantic Code"
                 description="Open Search Everywhere directly on the Semantic Code tab.">
-            <!-- 4-key default to avoid clashing with Rider; rebind in Settings | Keymap. -->
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift S"/>
+            <!-- Default Shift+\ ; rebind in Settings | Keymap if it clashes. -->
+            <keyboard-shortcut keymap="$default" first-keystroke="shift BACK_SLASH"/>
         </action>
     </actions>
 </idea-plugin>
