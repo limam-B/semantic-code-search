@@ -1,0 +1,51 @@
+<idea-plugin>
+    <id>dev.semanticcodesearch</id>
+    <name>Semantic Code Search</name>
+    <vendor email="m.l.belkheir@gmail.com">limam</vendor>
+
+    <description><![CDATA[
+        Local, fully-offline semantic code search for JetBrains Rider.
+        Ask a natural-language question and jump to the exact code line, surfaced inside
+        double-Shift Search Everywhere. Embeddings run in-process via ONNX; no server, no cloud.
+    ]]></description>
+
+    <!-- Pure platform frontend plugin: no ReSharper backend, no C# PSI dependency. -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <projectService
+            serviceImplementation="dev.semanticcodesearch.index.CodeSearchIndexService"/>
+
+        <!-- Legacy Search Everywhere contributor. On 2026.1 it auto-bridges into the new
+             Se* architecture via JetBrains' adapters. The search core is isolated, so a
+             later move to SeItemsProvider/SeTabFactory is a thin re-wrap. -->
+        <searchEverywhereContributor
+            implementation="dev.semanticcodesearch.search.SemanticSearchContributorFactory"/>
+
+        <projectConfigurable
+            instance="dev.semanticcodesearch.settings.CodeSearchConfigurable"
+            id="dev.semanticcodesearch.settings"
+            displayName="Semantic Code Search"
+            parentId="tools"/>
+
+        <postStartupActivity
+            implementation="dev.semanticcodesearch.startup.IndexStartupActivity"/>
+
+        <notificationGroup id="Semantic Code Search" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <action id="dev.semanticcodesearch.RebuildIndex"
+                class="dev.semanticcodesearch.search.RebuildIndexAction"
+                text="Rebuild Semantic Code Index"
+                description="Re-embed the whole project for semantic code search."/>
+
+        <action id="dev.semanticcodesearch.OpenSearch"
+                class="dev.semanticcodesearch.search.OpenSemanticSearchAction"
+                text="Search Semantic Code"
+                description="Open Search Everywhere directly on the Semantic Code tab.">
+            <!-- 4-key default to avoid clashing with Rider; rebind in Settings | Keymap. -->
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift S"/>
+        </action>
+    </actions>
+</idea-plugin>

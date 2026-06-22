@@ -1,0 +1,61 @@
+name: build
+
+# Manual button + version tags. Standard GitHub-hosted runner (no GPU) builds the
+# cross-platform plugin zip; the heavy deps (onnxruntime_gpu, the Rider SDK) download
+# onto the runner, never into the repo.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to attach the zip to a Release on tag builds
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'   # Gradle 8.13 can't run on JDK 24+; the plugin targets JBR 21
+
+      - name: Set up Gradle (cached)
+        uses: gradle/actions/setup-gradle@v4
+
+      # Tag `v1.2.3` -> plugin version 1.2.3; a manual run -> a distinct dev version.
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build plugin
+        run: |
+          chmod +x ./gradlew
+          ./gradlew buildPlugin -PpluginVersion=${{ steps.ver.outputs.version }}
+
+      # Ad-hoc manual builds: grab the zip from the run page. Short retention so the
+      # ~0.5 GB artifact doesn't pile up against the free Actions storage quota.
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-code-search-plugin
+          path: build/distributions/*.zip
+          retention-days: 5
+
+      # Tag builds (e.g. `git tag v0.5.0 && git push --tags`): permanent download on a
+      # Release. Release assets are stored separately from the artifact quota.
+      - name: Publish to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/distributions/*.zip

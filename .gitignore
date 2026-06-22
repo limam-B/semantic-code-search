@@ -1,0 +1,14 @@
+.gradle/
+build/
+out/
+.idea/
+.intellijPlatform/
+*.iml
+# Local ONNX model + tokenizer (downloaded once, see README)
+models/
+# Per-project index files written into target projects
+.semantic-code-search/
+
+# Claude Code working files (local only)
+.claude/
+CLAUDE.md
