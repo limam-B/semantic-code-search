@@ -1,8 +1,8 @@
 name: build
 
-# Manual button + version tags. Standard GitHub-hosted runner (no GPU) builds the
-# cross-platform plugin zip; the heavy deps (onnxruntime_gpu, the Rider SDK) download
-# onto the runner, never into the repo.
+# Manual button + version tags. A standard GitHub-hosted runner (no GPU) builds two flavors:
+# a slim CPU-only zip (Win/Linux/macOS) and the fat GPU zip (Win/Linux + CUDA). The heavy deps
+# (onnxruntime, the Rider SDK) download onto the runner, never into the repo.
 on:
   workflow_dispatch:
   push:
@@ -10,11 +10,15 @@ on:
       - 'v*'
 
 permissions:
-  contents: write   # required to attach the zip to a Release on tag builds
+  contents: write   # required to attach the zips to a Release on tag builds
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cpu, gpu]   # cpu = onnxruntime (~110 MB); gpu = onnxruntime_gpu (~0.5 GB)
     steps:
       - uses: actions/checkout@v4
 
@@ -38,22 +42,27 @@ jobs:
             echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build plugin
+      - name: Build plugin (${{ matrix.variant }})
+        shell: bash
         run: |
           chmod +x ./gradlew
-          ./gradlew buildPlugin -PpluginVersion=${{ steps.ver.outputs.version }}
+          GPU=$([ "${{ matrix.variant }}" = "gpu" ] && echo true || echo false)
+          ./gradlew buildPlugin -PpluginVersion=${{ steps.ver.outputs.version }} -Pgpu=$GPU
+          # Tag the zip with its variant so cpu + gpu can coexist on one Release.
+          cd build/distributions
+          for f in *.zip; do mv "$f" "${f%.zip}-${{ matrix.variant }}.zip"; done
 
-      # Ad-hoc manual builds: grab the zip from the run page. Short retention so the
-      # ~0.5 GB artifact doesn't pile up against the free Actions storage quota.
+      # Ad-hoc manual builds: grab the zip from the run page. Short retention so the large
+      # gpu artifact doesn't pile up against the free Actions storage quota.
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: semantic-code-search-plugin
+          name: semantic-code-search-${{ matrix.variant }}
           path: build/distributions/*.zip
           retention-days: 5
 
-      # Tag builds (e.g. `git tag v0.5.0 && git push --tags`): permanent download on a
-      # Release. Release assets are stored separately from the artifact quota.
+      # Tag builds (e.g. `git tag v0.5.0 && git push github v0.5.0`): both flavors land on the
+      # Release. Release assets are stored separately from the Actions artifact quota.
       - name: Publish to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

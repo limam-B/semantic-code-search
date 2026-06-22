@@ -6,6 +6,16 @@ Local, fully-offline semantic code search for **JetBrains Rider**. Ask a natural
 
 > Built and tested against **Rider 2026.1.2 (build 261)**. C#-focused — the chunker understands C#.
 
+## Install
+
+Grab a zip from the [Releases](https://github.com/limam-B/semantic-code-search/releases) (or build it
+below), then **Settings → Plugins → ⚙ → Install Plugin from Disk** and restart Rider. Each release ships
+two flavors:
+
+- **`…-cpu.zip`** — smaller (~110 MB), runs on Windows / Linux / macOS. Pick this unless you need GPU.
+- **`…-gpu.zip`** — large (~0.5 GB), Windows / Linux; uses CUDA when CUDA 12.x + cuDNN 9.x are present,
+  and auto-falls back to CPU otherwise.
+
 ## Architecture (everything behind a seam)
 
 ```
@@ -75,7 +85,8 @@ terminal with `JAVA_HOME` pointing at a JDK 21:
 ```
 
 The installable plugin lands in `build/distributions/semantic-code-search-<version>.zip`. Install it in
-Rider via **Settings → Plugins → ⚙ → Install Plugin from Disk**, then restart Rider.
+Rider via **Settings → Plugins → ⚙ → Install Plugin from Disk**, then restart Rider. This is the GPU
+flavor by default; add **`-Pgpu=false`** for the slim CPU-only zip.
 
 Notes:
 - The build auto-detects a local Rider install for `runIde` (the dev sandbox). If none is found it

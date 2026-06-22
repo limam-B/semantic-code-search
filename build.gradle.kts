@@ -20,6 +20,11 @@ repositories {
 val riderLocalPath: String? = providers.gradleProperty("riderLocalPath").orNull
     ?: "${System.getProperty("user.home")}/AppData/Local/Programs/Rider".takeIf { file(it).exists() }
 
+// ONNX Runtime flavor: -Pgpu=true (default) bundles the CUDA/TensorRT providers (~0.5 GB plugin,
+// Win+Linux); -Pgpu=false uses the CPU-only runtime (~110 MB, and adds macOS). The CI matrix
+// builds both. Same code either way — addCUDA() just throws on the CPU runtime and we fall back.
+val useGpu = providers.gradleProperty("gpu").map(String::toBoolean).getOrElse(true)
+
 dependencies {
     intellijPlatform {
         // local() uses the real install so runIde can launch a sandbox; the downloaded SDK is
@@ -32,9 +37,13 @@ dependencies {
     // native once on first run, then is offline. The MODEL is supplied locally (see README) —
     // we never use DJL's model zoo, so nothing else phones home.
     implementation("ai.djl.huggingface:tokenizers:0.31.1")
-    // GPU build: bundles the CUDA execution-provider native. Needs CUDA 12.x + cuDNN 9.x present on
-    // the machine (matching ORT 1.20); the embedder auto-falls back to CPU if they're missing.
-    implementation("com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0")
+    // GPU flavor bundles the CUDA/TensorRT providers (needs CUDA 12.x + cuDNN 9.x at runtime, else
+    // auto-falls back to CPU); CPU flavor is tiny and also runs on macOS. Toggled by -Pgpu.
+    if (useGpu) {
+        implementation("com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0")
+    } else {
+        implementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
+    }
 
     testImplementation("junit:junit:4.13.2")
 }
