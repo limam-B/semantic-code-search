@@ -1,119 +1,170 @@
 # Semantic Code Search
 
-Local, fully-offline semantic code search for **JetBrains Rider**. Ask a natural-language question —
-*"where is the hand rotation set?"* — and jump to the exact `file:line`, surfaced inside double-Shift
-**Search Everywhere**. Embeddings run in-process via ONNX. No server, no cloud.
+A Rider plugin for offline semantic code search. Ask a question in plain English, like
+*"where is the auth token refreshed?"*, and jump straight to the code that answers it.
+Everything runs locally — the models, the index, and the search — so no code leaves your machine.
 
-> Built and tested against **Rider 2026.1.2 (build 261)**. C#-focused — the chunker understands C#.
+Works on C# code. Built and tested against Rider 2026.1.2 (build 261).
 
-## Install
+## Contents
 
-Grab a zip from the [Releases](https://github.com/limam-B/semantic-code-search/releases) (or build it
-below), then **Settings → Plugins → ⚙ → Install Plugin from Disk** and restart Rider. Each release ships
-two flavors:
+- [Requirements](#requirements)
+- [1. Download the models](#1-download-the-models)
+- [2. Install the plugin](#2-install-the-plugin)
+- [3. Build from source](#3-build-from-source)
+- [Usage](#usage)
+- [Settings](#settings)
+- [How it works](#how-it-works)
+- [Limitations](#limitations)
+- [Development](#development)
 
-- **`…-cpu.zip`** — smaller (~110 MB), runs on Windows / Linux / macOS. Pick this unless you need GPU.
-- **`…-gpu.zip`** — large (~0.5 GB), Windows / Linux; uses CUDA when CUDA 12.x + cuDNN 9.x are present,
-  and auto-falls back to CPU otherwise.
+## Requirements
 
-## Architecture (everything behind a seam)
+- JetBrains Rider 2026.1.2 (build 261) or newer.
+- An embedding model in ONNX format (see below). A reranker model is optional.
+- A GPU is optional. With CUDA the models run on the GPU; otherwise they run on the CPU.
+
+## 1. Download the models
+
+The plugin does not bundle any models. You download them once and point the plugin at them.
+Each model is two files: the ONNX weights (`model.onnx`) and its tokenizer (`tokenizer.json`).
+
+By default the plugin looks here, and creates the folder on first launch:
 
 ```
-Chunker (frontend-only, text-based)   CSharpRegexChunker  (brace-match, Allman-aware)
-  -> Embedder (in-process ONNX, CUDA/GPU)  OnnxEmbedder    (gte-modernbert-base, CLS pooling, 768-d)
-  -> Retrieval — two-stage hybrid:
-       dense   VectorStore   brute-force cosine top-30 (normalized; no DB / no pgvector)
-       lexical LexicalIndex  BM25 top-30 (camelCase-aware: "hand rotation" hits SetHandRotation)
-       fuse    Rrf           Reciprocal Rank Fusion -> ~30 merged candidates
-       rerank  OnnxReranker  cross-encoder (gte-reranker) re-sorts -> right line (skipped if model absent)
-  -> Search Everywhere surface             legacy SearchEverywhereContributor (own tab, auto-bridged)
+%USERPROFILE%\.semantic-code-search\models\
 ```
 
-Each layer is an interface (`Chunker`, `Embedder`, `Reranker`) so the model, the chunking strategy,
-and the Search-Everywhere surface can each be swapped without touching the others.
+Inside it, make one subfolder per model, named exactly as shown below, and put the two files in.
+(You can change this location in Settings if you'd rather keep the models elsewhere.)
 
-### Why these choices
+### Embedding model (required)
 
-- **No PSI / text-based chunker.** In Rider the C# AST lives in the ReSharper *backend*, unreachable
-  from a pure-frontend plugin. The chunker recovers type + method boundaries from text by
-  brace-matching (tuned for Allman style). A tree-sitter or backend-PSI chunker can drop in later.
-- **Legacy `SearchEverywhereContributor`, not the new `SeItemsProvider`/`SeTabFactory`.** On 2026.1
-  the new API is `@ApiStatus.Experimental`, with no docs/samples, and a custom `SeTab` is ~12 abstract
-  suspend methods over an undocumented type ecosystem. Legacy is documented, simpler, and auto-bridges
-  into the new architecture. The isolated core makes the eventual port cheap.
-- **No pgvector / no DB.** A single codebase is well under ~200k chunks; brute-force cosine over a flat
-  normalized `float[]` is sub-millisecond and needs nothing else.
-- **In-process ONNX (not Ollama).** Self-contained and offline at runtime; no model server to manage.
+**gte-modernbert-base** — the default. Repo: <https://huggingface.co/Alibaba-NLP/gte-modernbert-base>
 
-## One-time setup: get the models (offline thereafter)
+Save into `gte-modernbert-base\`:
+- `model.onnx` — <https://huggingface.co/Alibaba-NLP/gte-modernbert-base/resolve/main/onnx/model.onnx>
+- `tokenizer.json` — <https://huggingface.co/Alibaba-NLP/gte-modernbert-base/resolve/main/tokenizer.json>
 
-The plugin auto-creates the model folders on first launch — just open them and drop the files in.
-Location: `%USERPROFILE%\.semantic-code-search\models\` (i.e. `C:\Users\<you>\.semantic-code-search\models\`).
-Prefer a normal path? Set a custom **Folder** per model in **Settings → Tools → Semantic Code Search**
-(handy since the leading-dot folder is awkward to create by hand in Explorer):
+### Reranker model (optional)
+
+Re-scores the top results for better ordering. If you skip it, search still works (it just uses
+semantic + keyword search without the final rerank). Turn it on or off in Settings.
+
+**gte-reranker-modernbert-base** — Repo: <https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base>
+
+Save into `gte-reranker-modernbert-base\`:
+- `model.onnx` — <https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base/resolve/main/onnx/model.onnx>
+- `tokenizer.json` — <https://huggingface.co/Alibaba-NLP/gte-reranker-modernbert-base/resolve/main/tokenizer.json>
+
+### Alternative embedding model
+
+You can use this in place of gte-modernbert-base (select it in Settings).
+
+**jina-embeddings-v2-base-code** — Repo: <https://huggingface.co/jinaai/jina-embeddings-v2-base-code>
+
+Save into `jina-embeddings-v2-base-code\`:
+- `model.onnx` — <https://huggingface.co/jinaai/jina-embeddings-v2-base-code/resolve/main/onnx/model.onnx>
+- `tokenizer.json` — <https://huggingface.co/jinaai/jina-embeddings-v2-base-code/resolve/main/tokenizer.json>
+
+> The `onnx/` folder on Hugging Face also has smaller, quantized versions (`model_fp16.onnx`,
+> `model_quantized.onnx`, and others). Any of them works — just save it in the model folder as
+> `model.onnx`.
+
+When you're done it should look like this:
 
 ```
 .semantic-code-search\models\
-    gte-modernbert-base\            model.onnx + tokenizer.json   (HF Alibaba-NLP/gte-modernbert-base)
-    gte-reranker-modernbert-base\   model.onnx + tokenizer.json   (HF Alibaba-NLP/gte-reranker-modernbert-base)
+  gte-modernbert-base\
+    model.onnx
+    tokenizer.json
+  gte-reranker-modernbert-base\        (optional)
+    model.onnx
+    tokenizer.json
 ```
 
-The reranker is optional — without it, search runs dense + BM25 + RRF only (toggle it in Settings).
+## 2. Install the plugin
 
-## Indexing scope (included / excluded folders)
+Grab a zip from the [Releases page](https://github.com/limam-B/semantic-code-search/releases).
+Each release comes in two builds:
 
-By default the plugin indexes **the whole project** (build/VCS/cache noise like `bin`, `obj`, `.git`,
-`node_modules`, and Unity's `Library`/`PackageCache`/`Temp`/`Logs` is always skipped). Narrow or widen
-it in **Settings → Tools → Semantic Code Search → Indexing scope**:
+- **`...-cpu.zip`** (about 110 MB) — runs on Windows, Linux, and macOS. Use this unless you
+  specifically want GPU acceleration.
+- **`...-gpu.zip`** (about 545 MB) — Windows and Linux. Uses CUDA when CUDA 12.x and cuDNN 9.x are
+  installed, and falls back to the CPU otherwise.
 
-- **Included folders** — project-relative folders to index (e.g. `src`). Leave empty for the whole
-  project. **On a Unity project, add `Assets`** (and `Packages` if you want package code indexed).
-- **Excluded folders** — subpaths or bare folder names to skip *within* the included folders
-  (e.g. `Assets/Vendor`, or just `Tests`).
+In Rider, go to **Settings → Plugins → ⚙ → Install Plugin from Disk**, choose the zip, and restart.
 
-Only `.cs` files are indexed; generated `*.g.cs` / `*.generated.cs` are skipped. Run **Index** after
-changing scope.
+## 3. Build from source
 
-## Build from source
+Only needed if you'd rather build it yourself instead of using a release.
 
-**Requirement: JDK 21.** Gradle 8.13 can't run on JDK 24+; IntelliJ IDEA's bundled JBR 21 works.
-Easiest: open the project in **IntelliJ IDEA** and run the Gradle **`buildPlugin`** task. Or from a
-terminal with `JAVA_HOME` pointing at a JDK 21:
+You need **JDK 21** (Gradle 8.13 will not run on JDK 24 or newer). The easiest route is to open the
+project in IntelliJ IDEA and run the `buildPlugin` Gradle task, which uses IDEA's bundled JDK 21.
+From a terminal, with `JAVA_HOME` set to a JDK 21:
 
 ```
 ./gradlew buildPlugin
 ```
 
-The installable plugin lands in `build/distributions/semantic-code-search-<version>.zip`. Install it in
-Rider via **Settings → Plugins → ⚙ → Install Plugin from Disk**, then restart Rider. This is the GPU
-flavor by default; add **`-Pgpu=false`** for the slim CPU-only zip.
+The zip is written to `build/distributions/`. This builds the GPU version by default; add
+`-Pgpu=false` for the smaller CPU-only build.
 
-Notes:
-- The build auto-detects a local Rider install for `runIde` (the dev sandbox). If none is found it
-  downloads the 2026.1.2 SDK — `buildPlugin` still works. Point at your own Rider with
-  `-PriderLocalPath=<path>` or `riderLocalPath=<path>` in `gradle.properties` (only needed for `runIde`).
-- Drop the models into `%USERPROFILE%\.semantic-code-search\models\` (see "One-time setup" above) —
-  they are NOT bundled in the source/plugin.
-- GPU/CUDA is optional; without it everything runs on CPU.
+The first build downloads the Rider SDK, so it can take a few minutes. A local Rider installation is
+only needed if you want to launch the plugin in a sandbox with `./gradlew runIde`.
 
-Use it: **Rebuild Semantic Code Index** (action, or the Settings "Index now" button), then double-Shift →
-ask a natural-language question → the **Semantic Code** tab lists hits; Enter jumps to the line.
+## Usage
 
-## Status / known rough edges (honest)
+1. Open your project and run **Rebuild Semantic Code Index** (or click **Index now** in Settings).
+   This embeds your code. It's a one-time cost — the index is saved and reused between sessions, and
+   it updates itself as you edit files.
+2. Press **`Shift+\`** to open search on the **Semantic Code** tab. (You can also press Shift twice
+   and switch to that tab, or rebind the shortcut in Settings → Keymap.)
+3. Type your question in plain English and press Enter on a result to jump to that line.
 
-- **Chunker is heuristic.** Brace-matching doesn't skip braces inside strings/comments and misses
-  same-line-brace and expression-bodied members. Fine for method-level recall.
-- **Lands on the right method, not always the exact line.** Exact-line precision leans on the
-  lexical RRF + cross-encoder rerank stage.
-- **First run** fetches the DJL tokenizer native once; the ONNX runtime native ships in-jar. Offline
-  after that.
+> The very first search downloads a small tokenizer library once. After that it works fully offline.
 
-## Tests
+## Settings
+
+Found under **Settings → Tools → Semantic Code Search**:
+
+- **Retrieval** — turn the keyword (BM25) stage and the reranker on or off, and choose how many
+  results to show.
+- **Embedder / Reranker** — pick the model and tell the plugin which folder its files are in.
+- **Indexing scope** — by default the whole project is indexed (common build, cache, and version
+  control folders are always skipped). Use **Included folders** to restrict indexing to specific
+  folders (for example `src`), and **Excluded folders** to skip subpaths (for example `tests`).
+
+## How it works
+
+Search is a short pipeline, and each stage can be swapped out:
+
+1. **Chunk** — split each C# file into its methods and types. This is done from the text, because the
+   C# syntax tree lives in Rider's backend and isn't available to a frontend plugin.
+2. **Embed** — turn each chunk into a vector using the ONNX model.
+3. **Retrieve** — combine semantic similarity (cosine distance over the vectors) with keyword search
+   (BM25), then merge the two rankings with Reciprocal Rank Fusion.
+4. **Rerank** — if the reranker model is present, re-score the top candidates with a cross-encoder for
+   a sharper final order.
+5. **Show** — results appear in their own Search Everywhere tab.
+
+The index is a flat list of vectors held in memory and saved to `.semantic-code-search/index.bin`
+inside your project. There's no database; for a single codebase, a brute-force search is fast enough.
+
+## Limitations
+
+- The chunker works from text, not a real parser. It doesn't account for braces inside strings or
+  comments, single-line method bodies, or expression-bodied members. It's good enough for
+  method-level results.
+- Results land on the right method, not always the exact line.
+- C# only for now.
+
+## Development
 
 ```
 ./gradlew test
 ```
 
-Pure-logic tests (chunker, BM25, RRF, vector store) always run. The real-model integration tests load
-the actual ONNX models from `%USERPROFILE%\.semantic-code-search\models\` and self-skip when the models
-aren't present, so a clean build stays green.
+The logic tests (chunker, BM25, fusion, vector store) always run. The model-based tests load the real
+ONNX models from `%USERPROFILE%\.semantic-code-search\models\` and skip themselves when the models
+aren't present, so the build stays green without them.
