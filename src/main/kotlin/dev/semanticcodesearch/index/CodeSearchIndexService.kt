@@ -96,6 +96,10 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
     }
     private fun indexFile(): Path = Paths.get(project.basePath ?: ".", ".semantic-code-search", "index.bin")
 
+    /** User-configured CUDA / cuDNN bin dirs (Settings → GPU); null when blank (so the loader auto-detects). */
+    private fun cudaDirOrNull(): Path? = settings().cudaDir.takeIf { it.isNotBlank() }?.let { Paths.get(it) }
+    private fun cudnnDirOrNull(): Path? = settings().cudnnDir.takeIf { it.isNotBlank() }?.let { Paths.get(it) }
+
     /** Pre-create the model folders so the user has a place to drop files into — leading-dot dirs
      *  like .semantic-code-search are awkward to create in Windows Explorer. */
     fun ensureModelDirsExist() {
@@ -145,6 +149,8 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
             dir.resolve("tokenizer.json"),
             dimension = info.dimension,
             pooling = info.pooling,
+            cudaDir = cudaDirOrNull(),
+            cudnnDir = cudnnDirOrNull(),
         ).also { embedder = it; builtEmbedderKey = embedderKey() }
     }
 
@@ -157,7 +163,7 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
             log.warn("Reranker model not found at $dir — skipping rerank.")
             return null
         }
-        return runCatching { OnnxReranker(EmbedderModels.resolveOnnxFile(dir), dir.resolve("tokenizer.json")) }
+        return runCatching { OnnxReranker(EmbedderModels.resolveOnnxFile(dir), dir.resolve("tokenizer.json"), cudaDir = cudaDirOrNull(), cudnnDir = cudnnDirOrNull()) }
             .getOrElse { log.warn("Reranker init failed: ${it.message}"); null }
             .also { reranker = it }
     }

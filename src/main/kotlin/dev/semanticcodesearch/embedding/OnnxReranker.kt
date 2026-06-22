@@ -18,6 +18,8 @@ class OnnxReranker(
     modelPath: Path,
     tokenizerPath: Path,
     private val maxTokens: Int = 1024,
+    cudaDir: Path? = null,
+    cudnnDir: Path? = null,
 ) : Reranker {
 
     private val env: OrtEnvironment
@@ -34,7 +36,7 @@ class OnnxReranker(
             val bytes = Files.readAllBytes(modelPath)
             var gpu = false
             val s = try {
-                CudaNativeLoader.ensureLoaded()
+                CudaNativeLoader.ensureLoaded(cudaDir, cudnnDir)
                 val opts = OrtSession.SessionOptions()
                 opts.addCUDA(0)
                 val sess = e.createSession(bytes, opts)

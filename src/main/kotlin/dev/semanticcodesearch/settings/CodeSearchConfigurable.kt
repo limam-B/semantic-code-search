@@ -1,5 +1,6 @@
 package dev.semanticcodesearch.settings
 
+import dev.semanticcodesearch.embedding.CudaNativeLoader
 import dev.semanticcodesearch.embedding.ModelCatalog
 import dev.semanticcodesearch.index.CodeSearchIndexService
 import com.intellij.openapi.fileChooser.FileChooser
@@ -28,6 +29,8 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
     private val rerankerCombo = ComboBox(ModelCatalog.rerankers.toTypedArray())
     private val embedderDirField = folderField()
     private val rerankerDirField = folderField()
+    private val cudaDirField = folderField()
+    private val cudnnDirField = folderField()
 
     private val includeModel = DefaultListModel<String>()
     private val includeList = JBList(includeModel).apply { visibleRowCount = 4 }
@@ -65,6 +68,22 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
             group("Compute") {
                 row("Device:") { label(CodeSearchIndexService.getInstance(project).deviceSummary()) }
                 row { comment("GPU (CUDA) once a model loads, CPU fallback. Reopen Settings after an Index to refresh.") }
+            }
+
+            group("GPU (CUDA)") {
+                row("CUDA bin folder:") { cell(cudaDirField).align(AlignX.FILL) }
+                row("cuDNN bin folder:") { cell(cudnnDirField).align(AlignX.FILL) }
+                row {
+                    button("Detect installed CUDA / cuDNN") {
+                        CudaNativeLoader.detectCudaDir()?.let { cudaDirField.text = it.toString() }
+                        CudaNativeLoader.detectCudnnDir()?.let { cudnnDirField.text = it.toString() }
+                    }
+                }
+                row {
+                    comment("For the GPU build only — the folders holding cudart64_12.dll (CUDA 12.x) and cudnn64_9.dll " +
+                        "(cuDNN 9.x). Use Detect to auto-fill from a standard install, or set them by hand; blank = CPU. " +
+                        "Restart Rider after changing. See the README.")
+                }
             }
 
             group("Embedder") {
@@ -134,6 +153,8 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
         state.rerankerModelDir = rerankerDirField.text.trim()
         state.includedPaths = items(includeModel).toMutableList()
         state.excludedPaths = items(excludeModel).toMutableList()
+        state.cudaDir = cudaDirField.text.trim()
+        state.cudnnDir = cudnnDirField.text.trim()
         CodeSearchIndexService.getInstance(project).onSettingsChanged()
     }
 
@@ -148,13 +169,21 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
         (rerankerCombo.selectedItem as? String) != state.rerankerModel ||
         rerankerDirField.text.trim() != state.rerankerModelDir ||
         items(includeModel) != state.includedPaths ||
-        items(excludeModel) != state.excludedPaths
+        items(excludeModel) != state.excludedPaths ||
+        cudaDirField.text.trim() != state.cudaDir ||
+        cudnnDirField.text.trim() != state.cudnnDir
 
     private fun resetFromState() {
         embedderCombo.selectedItem = state.embedderModel
         embedderDirField.text = state.embedderModelDir
         rerankerCombo.selectedItem = state.rerankerModel
         rerankerDirField.text = state.rerankerModelDir
+        // Auto-detect CUDA/cuDNN when unset and persist immediately — a GPU user gets it with no Apply.
+        // (The Detect button re-runs detection to reset the fields if they were edited.)
+        if (state.cudaDir.isBlank()) state.cudaDir = CudaNativeLoader.detectCudaDir()?.toString().orEmpty()
+        if (state.cudnnDir.isBlank()) state.cudnnDir = CudaNativeLoader.detectCudnnDir()?.toString().orEmpty()
+        cudaDirField.text = state.cudaDir
+        cudnnDirField.text = state.cudnnDir
         includeModel.clear()
         state.includedPaths.forEach { includeModel.addElement(it) }
         excludeModel.clear()

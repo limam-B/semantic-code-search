@@ -28,6 +28,8 @@ class OnnxEmbedder(
     override val dimension: Int = 768,
     private val pooling: PoolingMode = PoolingMode.MEAN,
     private val maxTokens: Int = 1024,
+    cudaDir: Path? = null,
+    cudnnDir: Path? = null,
 ) : Embedder, AutoCloseable {
 
     private val env: OrtEnvironment
@@ -51,7 +53,7 @@ class OnnxEmbedder(
             // Try CUDA (the RTX GPU) first; fall back to CPU if the CUDA/cuDNN runtime isn't present.
             var gpu = false
             val s = try {
-                CudaNativeLoader.ensureLoaded()
+                CudaNativeLoader.ensureLoaded(cudaDir, cudnnDir)
                 val opts = OrtSession.SessionOptions()
                 opts.addCUDA(0)
                 val sess = e.createSession(modelBytes, opts)

@@ -21,7 +21,12 @@ class GpuLoadsTest {
         assumeTrue("gte model not present — skipping", Files.exists(gteDir.resolve("model.onnx")))
         assumeTrue("no CUDA toolkit on this machine — skipping", CudaNativeLoader.cudaAvailable())
 
-        (EmbedderModels.gteModernBertBase(gteDir) as OnnxEmbedder).use { emb ->
+        OnnxEmbedder(
+            EmbedderModels.resolveOnnxFile(gteDir),
+            gteDir.resolve("tokenizer.json"),
+            cudaDir = CudaNativeLoader.detectCudaDir(),
+            cudnnDir = CudaNativeLoader.detectCudnnDir(),
+        ).use { emb ->
             assertTrue("expected GPU (CUDA) but got CPU — pre-load may have failed", emb.usingGpu)
         }
     }

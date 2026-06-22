@@ -15,6 +15,8 @@ import java.nio.file.Paths
  * Pre-loading every dependency by absolute path sidesteps the search entirely: once a module is in
  * the process, Windows resolves imports to it by name, regardless of search policy.
  *
+ * The folders come from settings — [ensureLoaded] only loads what it's handed; it never scans the disk
+ * itself. Discovery lives in the Settings panel (the Detect button calls [detectCudaDir]/[detectCudnnDir]).
  * Must use the CUDA-12 cuDNN build (…\CUDNN\vX\bin\12.x) to match a CUDA 12.x toolkit — loading the
  * CUDA-13 build against a 12.x runtime hard-crashes the JVM (STATUS_STACK_BUFFER_OVERRUN).
  */
@@ -25,21 +27,24 @@ object CudaNativeLoader {
     @Volatile
     private var done = false
 
-    fun cudaAvailable(): Boolean = cudaBinDir() != null
-
+    /**
+     * Pre-load CUDA/cuDNN from the user-configured [cudaDir] / [cudnnDir] (Settings → GPU). Loads only
+     * what those folders point at — no disk scanning. A null/invalid folder is skipped, so the session
+     * runs on CPU. Native libs load once per process: changing the folders takes effect after a restart.
+     */
     @Synchronized
-    fun ensureLoaded() {
+    fun ensureLoaded(cudaDir: Path?, cudnnDir: Path?) {
         if (done) return
         done = true
 
         val targets = ArrayList<Path>()
-        cudaBinDir()?.let { bin ->
+        resolveBin(cudaDir, "cudart64_12.dll")?.let { bin ->
             for (n in CUDA_LIBS) {
                 val f = bin.resolve("$n.dll")
                 if (Files.exists(f)) targets.add(f)
             }
         }
-        cudnnDir12()?.let { dir ->
+        resolveBin(cudnnDir, "cudnn64_9.dll")?.let { dir ->
             runCatching {
                 Files.list(dir).use { s ->
                     s.filter { it.fileName.toString().endsWith(".dll") }.forEach { targets.add(it) }
@@ -48,7 +53,7 @@ object CudaNativeLoader {
         }
 
         if (targets.isEmpty()) {
-            LOG.warn("CudaNativeLoader: no CUDA 12 / cuDNN DLLs found — GPU unavailable, will use CPU.")
+            LOG.warn("CudaNativeLoader: no CUDA/cuDNN folders set (Settings → GPU) — running on CPU.")
             return
         }
 
@@ -64,8 +69,20 @@ object CudaNativeLoader {
         LOG.warn("CudaNativeLoader: loaded ${targets.size - remaining.size}/${targets.size} CUDA/cuDNN DLLs by absolute path; ${remaining.size} unresolved")
     }
 
-    /** Newest CUDA toolkit bin that has the v12 runtime. */
-    private fun cudaBinDir(): Path? {
+    /** A configured folder is valid if it — or its `bin` subfolder — holds [marker]; returns that folder. */
+    private fun resolveBin(dir: Path?, marker: String): Path? {
+        if (dir == null) return null
+        return when {
+            Files.exists(dir.resolve(marker)) -> dir
+            Files.exists(dir.resolve("bin").resolve(marker)) -> dir.resolve("bin")
+            else -> { LOG.warn("Configured GPU folder '$dir' has no $marker — ignoring it."); null }
+        }
+    }
+
+    fun cudaAvailable(): Boolean = detectCudaDir() != null
+
+    /** Best-effort auto-detect of a CUDA 12 bin folder from standard installs. For the Settings Detect button. */
+    fun detectCudaDir(): Path? {
         System.getenv("CUDA_PATH")?.let {
             val b = Paths.get(it, "bin")
             if (Files.exists(b.resolve("cudart64_12.dll"))) return b
@@ -81,8 +98,8 @@ object CudaNativeLoader {
         }
     }
 
-    /** cuDNN dir built for CUDA 12 (folder named 12.x), holding cudnn64_9.dll + its sublibs. */
-    private fun cudnnDir12(): Path? {
+    /** Best-effort auto-detect of a cuDNN-9-for-CUDA-12 bin folder (named 12.x). For the Settings Detect button. */
+    fun detectCudnnDir(): Path? {
         val root = Paths.get("C:\\Program Files\\NVIDIA\\CUDNN")
         if (!Files.isDirectory(root)) return null
         Files.walk(root, 5).use { s ->

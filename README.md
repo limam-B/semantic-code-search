@@ -21,12 +21,13 @@ code that answers it. Models, index, and search all run locally. No server, no c
 1. [Requirements](#requirements)
 2. [Download the models](#download-the-models)
 3. [Install the plugin](#install-the-plugin)
-4. [Build from source](#build-from-source)
-5. [Usage](#usage)
-6. [Settings](#settings)
-7. [How it works](#how-it-works)
-8. [Limitations](#limitations)
-9. [Development](#development)
+4. [GPU acceleration](#gpu-acceleration-optional)
+5. [Build from source](#build-from-source)
+6. [Usage](#usage)
+7. [Settings](#settings)
+8. [How it works](#how-it-works)
+9. [Limitations](#limitations)
+10. [Development](#development)
 
 ---
 
@@ -99,6 +100,54 @@ Pick **cpu** unless you specifically want GPU acceleration. Then, in Rider:
 
 ---
 
+## GPU acceleration (optional)
+
+The `…-gpu.zip` build can run the models on an NVIDIA GPU. It bundles ONNX Runtime's CUDA provider but
+**not** NVIDIA's runtime libraries, so the machine needs the **CUDA 12.x** and **cuDNN 9.x** runtimes.
+Without them, the GPU build just runs on the CPU.
+
+> [!NOTE]
+> Optional and Windows-focused. **Most people should use the CPU build** — it needs none of this, and the
+> GPU only speeds up the initial indexing. The runtime is also ~1.5–2 GB (cuDNN alone is ~1 GB), so there
+> is no small GPU option.
+
+### Get the runtime (without the big installers)
+
+You don't need the CUDA Toolkit (~3 GB) or the cuDNN `.exe` (~1.8 GB) — only the runtime DLLs. Grab the
+**redistributable archives**: just DLLs, no install, no admin, no NVIDIA login.
+
+1. **cuDNN 9** — download `cudnn-windows-x86_64-9.x_cuda12-archive.zip` from
+   <https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/> and unzip it. Its
+   `bin\` folder holds `cudnn64_9.dll` and the rest.
+2. **CUDA 12 runtime** — from <https://developer.download.nvidia.com/compute/cuda/redist/>, download the
+   Windows archives for `cuda_cudart`, `libcublas`, `libcufft`, `libcusparse`, and `libcurand`, then copy
+   all of their `bin\*.dll` files **into one folder**. You should end up with `cudart64_12.dll`,
+   `cublas64_12.dll`, `cublasLt64_12.dll`, `cufft64_11.dll`, `cusparse64_12.dll`, and `curand64_10.dll`.
+
+> [!TIP]
+> With Python, the same DLLs come as pip wheels (each `.whl` is a zip):
+> `pip download nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-cusparse-cu12 nvidia-curand-cu12`
+> — then gather the DLLs from their `nvidia\*\bin\` folders into one folder.
+
+Already have the full CUDA Toolkit + cuDNN installed? Skip all of the above; the plugin auto-detects them.
+
+### Point the plugin at the folders
+
+In **Settings → Tools → Semantic Code Search → GPU (CUDA)**:
+
+| Field                | Folder that contains                                | Example                                           |
+| -------------------- | --------------------------------------------------- | ------------------------------------------------- |
+| **CUDA bin folder**  | the six `…64_*.dll` above (incl. `cudart64_12.dll`) | your gathered folder, or `…\CUDA\v12.6\bin`        |
+| **cuDNN bin folder** | `cudnn64_9.dll`                                     | the cuDNN zip's `bin\`, or `…\CUDNN\v9.x\bin\12.6` |
+
+With a standard install, **Detect installed CUDA / cuDNN** auto-fills and saves these. For a manual
+extract, set them by hand. Either way, **restart Rider** afterward — native libraries load once per session.
+
+After your next index or search, **Settings → … → Compute → Device** shows whether it landed on
+GPU (CUDA) or CPU.
+
+---
+
 ## Build from source
 
 > [!IMPORTANT]
@@ -139,6 +188,7 @@ minutes. A local Rider install is only needed to launch a sandbox with `./gradle
 | **Retrieval**           | Toggle keyword (BM25) search and the reranker; set how many results to show            |
 | **Embedder / Reranker** | Choose the model and the folder its files live in                                      |
 | **Indexing scope**      | *Included folders* to narrow indexing (e.g. `src`); *Excluded folders* to skip subpaths (e.g. `tests`) |
+| **GPU (CUDA)**          | CUDA / cuDNN folders for the GPU build — see [GPU acceleration](#gpu-acceleration-optional)             |
 
 By default the whole project is indexed; common build, cache, and version-control folders are always
 skipped.

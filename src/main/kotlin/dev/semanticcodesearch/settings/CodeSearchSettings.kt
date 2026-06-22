@@ -22,6 +22,8 @@ class CodeSearchSettings : PersistentStateComponent<CodeSearchSettings.State> {
         var rerankerModelDir: String = "",                          // folder; blank = default location
         var includedPaths: MutableList<String> = mutableListOf(),   // project-relative folders to index; empty = whole project
         var excludedPaths: MutableList<String> = mutableListOf(),   // subpaths/names to skip within the included folders
+        var cudaDir: String = "",   // CUDA 12 bin dir (has cudart64_12.dll); blank = CPU (set in Settings → GPU)
+        var cudnnDir: String = "",  // cuDNN 9 bin dir (has cudnn64_9.dll); blank = CPU (set in Settings → GPU)
     )
 
     private var state = State()
