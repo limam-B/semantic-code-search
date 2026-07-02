@@ -79,8 +79,12 @@ class EndToEndPipelineTest {
     fun naturalLanguageQueryLandsOnTheExactMethod() {
         assumeTrue("gte model not present — skipping", Files.exists(gteDir.resolve("model.onnx")))
 
-        val chunker = CSharpRegexChunker()
-        val chunks = sampleProject.flatMap { (path, src) -> chunker.chunkText(path, src) }
+        // C# chunking now goes through the Roslyn sidecar; self-skip if it isn't built.
+        val sidecarDll = Paths.get(System.getProperty("user.dir"), "sidecar", "bin", "Release", "net8.0", "roslyn-chunker.dll")
+        assumeTrue("Roslyn sidecar not built — run: dotnet build -c Release sidecar/", Files.exists(sidecarDll))
+        val chunks = RoslynChunker { RoslynChunker.SidecarLaunch("dotnet", sidecarDll, sidecarDll.parent) }.use { chunker ->
+            sampleProject.flatMap { (path, src) -> chunker.chunkText(path, src) }
+        }
         assertTrue("expected several chunks, got ${chunks.size}", chunks.size >= 5)
 
         val store = VectorStore(768)

@@ -45,7 +45,29 @@ dependencies {
         implementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
     }
 
+    // JSON for the Roslyn sidecar wire protocol. DJL pulls Gson transitively, but declare it
+    // explicitly so the compile classpath doesn't depend on a transitive staying put.
+    implementation("com.google.code.gson:gson:2.11.0")
+
     testImplementation("junit:junit:4.13.2")
+}
+
+// ---- Roslyn sidecar: a framework-dependent .NET tool bundled into the plugin under /sidecar ----
+// `buildPlugin` zips the prepareSandbox output, so copying the published sidecar into the plugin
+// dir there ships it inside the zip. Needs `dotnet` on the build machine (CI installs it).
+val sidecarOutput = layout.buildDirectory.dir("sidecar")
+
+val publishSidecar by tasks.registering(Exec::class) {
+    workingDir = file("sidecar")
+    commandLine("dotnet", "publish", "-c", "Release", "-o", sidecarOutput.get().asFile.absolutePath)
+    inputs.files(fileTree("sidecar") { exclude("bin", "obj") })
+    outputs.dir(sidecarOutput)
+}
+
+tasks.prepareSandbox {
+    dependsOn(publishSidecar)
+    // Plugin dir name inside the sandbox/zip == rootProject.name ("semantic-code-search").
+    from(sidecarOutput) { into("${rootProject.name}/sidecar") }
 }
 
 intellijPlatform {

@@ -16,6 +16,11 @@
         <projectService
             serviceImplementation="dev.semanticcodesearch.index.CodeSearchIndexService"/>
 
+        <!-- In-process MCP server: exposes semantic search as a `search_code` tool over localhost
+             HTTP, so AI agents (Claude Code, etc.) can query the loaded index directly. -->
+        <projectService
+            serviceImplementation="dev.semanticcodesearch.mcp.McpServerService"/>
+
         <!-- Legacy Search Everywhere contributor. On 2026.1 it auto-bridges into the new
              Se* architecture via JetBrains' adapters. The search core is isolated, so a
              later move to SeItemsProvider/SeTabFactory is a thin re-wrap. -->

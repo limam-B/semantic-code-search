@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Framework-dependent sidecar: a tiny .NET console app that parses C# with Roslyn and streams
+    back chunk boundaries (type/method/.../enum/delegate) with their XML docs folded in. The Rider
+    plugin (pure-Kotlin frontend) launches this over stdio because the C# AST is otherwise only
+    reachable from Rider's ReSharper backend. Framework-dependent (no bundled runtime) — the plugin
+    detects an installed `dotnet`; RollForward=Major lets the net8.0 build run on a 9.x/10.x runtime.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <AssemblyName>roslyn-chunker</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <LangVersion>latest</LangVersion>
+    <!-- Drop Roslyn's localized satellite resource dlls (cs/de/es/... folders) — English only. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+  </ItemGroup>
+
+</Project>

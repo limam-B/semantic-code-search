@@ -3,6 +3,7 @@ package dev.semanticcodesearch.settings
 import dev.semanticcodesearch.embedding.CudaNativeLoader
 import dev.semanticcodesearch.embedding.ModelCatalog
 import dev.semanticcodesearch.index.CodeSearchIndexService
+import dev.semanticcodesearch.mcp.McpServerService
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.BoundConfigurable
@@ -31,6 +32,7 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
     private val rerankerDirField = folderField()
     private val cudaDirField = folderField()
     private val cudnnDirField = folderField()
+    private val dotnetDirField = folderField()
 
     private val includeModel = DefaultListModel<String>()
     private val includeList = JBList(includeModel).apply { visibleRowCount = 4 }
@@ -83,6 +85,32 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
                     comment("For the GPU build only — the folders holding cudart64_12.dll (CUDA 12.x) and cudnn64_9.dll " +
                         "(cuDNN 9.x). Use Detect to auto-fill from a standard install, or set them by hand; blank = CPU. " +
                         "Restart Rider after changing. See the README.")
+                }
+            }
+
+            group("C# chunking (Roslyn sidecar)") {
+                row("dotnet folder:") { cell(dotnetDirField).align(AlignX.FILL) }
+                row {
+                    comment("C# files are parsed by a bundled Roslyn sidecar, which needs the .NET runtime. " +
+                        "Leave blank to use 'dotnet' from PATH, or point to a .NET install folder. " +
+                        "If .NET isn't found, indexing is blocked with a message — there is no fallback.")
+                }
+            }
+
+            group("MCP server (for AI agents)") {
+                row {
+                    checkBox("Expose semantic search over HTTP (MCP)").bindSelected(state::mcpEnabled)
+                        .comment("Lets AI agents (Claude Code, etc.) call a read-only search_code tool. Localhost only.")
+                }
+                row("Port:") {
+                    intTextField(0..65535).bindIntText(state::mcpPort)
+                        .comment("0 = auto-pick a free port on each project open. Set a fixed port to hard-code the URL.")
+                }
+                row("Status:") { label(mcpStatus()) }
+                row {
+                    comment("Add to your MCP client, e.g.:<br/>" +
+                        "<code>{ \"type\": \"http\", \"url\": \"http://127.0.0.1:&lt;port&gt;/mcp\" }</code><br/>" +
+                        "Apply, then reopen Settings to see the bound port.")
                 }
             }
 
@@ -145,6 +173,11 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
             .createPanel()
     }
 
+    private fun mcpStatus(): String {
+        val svc = McpServerService.getInstance(project)
+        return if (svc.isRunning) "Running at http://127.0.0.1:${svc.boundPort}/mcp" else "Not running"
+    }
+
     override fun apply() {
         super.apply()
         state.embedderModel = (embedderCombo.selectedItem as? String) ?: state.embedderModel
@@ -155,7 +188,9 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
         state.excludedPaths = items(excludeModel).toMutableList()
         state.cudaDir = cudaDirField.text.trim()
         state.cudnnDir = cudnnDirField.text.trim()
+        state.dotnetPath = dotnetDirField.text.trim()
         CodeSearchIndexService.getInstance(project).onSettingsChanged()
+        McpServerService.getInstance(project).restart()   // pick up mcpEnabled / mcpPort changes
     }
 
     override fun reset() {
@@ -171,7 +206,8 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
         items(includeModel) != state.includedPaths ||
         items(excludeModel) != state.excludedPaths ||
         cudaDirField.text.trim() != state.cudaDir ||
-        cudnnDirField.text.trim() != state.cudnnDir
+        cudnnDirField.text.trim() != state.cudnnDir ||
+        dotnetDirField.text.trim() != state.dotnetPath
 
     private fun resetFromState() {
         embedderCombo.selectedItem = state.embedderModel
@@ -184,6 +220,7 @@ class CodeSearchConfigurable(private val project: Project) : BoundConfigurable("
         if (state.cudnnDir.isBlank()) state.cudnnDir = CudaNativeLoader.detectCudnnDir()?.toString().orEmpty()
         cudaDirField.text = state.cudaDir
         cudnnDirField.text = state.cudnnDir
+        dotnetDirField.text = state.dotnetPath
         includeModel.clear()
         state.includedPaths.forEach { includeModel.addElement(it) }
         excludeModel.clear()

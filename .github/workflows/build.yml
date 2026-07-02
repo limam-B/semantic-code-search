@@ -31,6 +31,13 @@ jobs:
       - name: Set up Gradle (cached)
         uses: gradle/actions/setup-gradle@v4
 
+      # The build publishes the Roslyn C# chunker sidecar (framework-dependent, portable) and
+      # bundles it into the plugin zip. Needs a .NET SDK on the runner.
+      - name: Set up .NET (Roslyn sidecar)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
       # Tag `v1.2.3` -> plugin version 1.2.3; a manual run -> a distinct dev version.
       - name: Resolve version
         id: ver

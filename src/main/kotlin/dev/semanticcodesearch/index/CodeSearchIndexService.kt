@@ -43,7 +43,8 @@ import java.util.Collections
 class CodeSearchIndexService(private val project: Project) : Disposable {
 
     private val log = logger<CodeSearchIndexService>()
-    private val chunkers: List<Chunker> = listOf(CSharpRegexChunker())
+    private val chunker = RoslynChunker { sidecarLaunch() }
+    private val chunkers: List<Chunker> = listOf(chunker)
     private var store = VectorStore(dimension = 768)
     private val lexicalIndex = LexicalIndex()
 
@@ -182,6 +183,7 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
     fun rebuildIndex() {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Building semantic code index", true) {
             override fun run(indicator: ProgressIndicator) {
+                if (!chunkerGateOk()) return
                 val emb = ensureEmbedder()
                 val files = collectSourceFiles()
                 synchronized(indexLock) {
@@ -208,6 +210,7 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
     fun runIndex() {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Indexing semantic code", true) {
             override fun run(indicator: ProgressIndicator) {
+                if (!chunkerGateOk()) return
                 val emb = ensureEmbedder()
                 val files = collectSourceFiles()
                 val keepPaths = files.mapTo(HashSet()) { it.path }
@@ -257,6 +260,43 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
             .getNotificationGroup("Semantic Code Search")
             .createNotification(message, NotificationType.INFORMATION)
             .notify(project)
+    }
+
+    private fun notifyWarn(message: String) {
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("Semantic Code Search")
+            .createNotification(message, NotificationType.WARNING)
+            .notify(project)
+    }
+
+    /** How to launch the Roslyn sidecar, or null if the dll or a runnable dotnet is missing. */
+    private fun sidecarLaunch(): RoslynChunker.SidecarLaunch? {
+        val dll = SidecarLocator.locateDll() ?: return null
+        val dotnet = SidecarLocator.resolveDotnet(settings().dotnetPath) ?: return null
+        return RoslynChunker.SidecarLaunch(dotnet, dll, dll.parent)
+    }
+
+    /**
+     * Pre-index gate. C# chunking has no fallback (by design), so rather than silently produce an
+     * empty index we verify the Roslyn sidecar can actually run and, if not, block indexing with a
+     * specific, actionable notification. Returns true only when indexing should proceed.
+     */
+    private fun chunkerGateOk(): Boolean {
+        if (SidecarLocator.locateDll() == null) {
+            notifyWarn("C# indexing needs the Roslyn sidecar, which is missing from the plugin install. Reinstall the plugin.")
+            return false
+        }
+        if (SidecarLocator.resolveDotnet(settings().dotnetPath) == null) {
+            notifyWarn("C# indexing needs the .NET runtime. Install .NET 8+ and make sure 'dotnet' is on PATH, " +
+                "or set its folder in Settings → Tools → Semantic Code Search.")
+            return false
+        }
+        val probe = chunker.probe()
+        if (!probe.ok) {
+            notifyWarn("The Roslyn C# sidecar failed to start: ${probe.message}. Check the dotnet path in Settings.")
+            return false
+        }
+        return true
     }
 
     private fun queueIncremental(changed: List<VirtualFile>, deleted: List<String>) {
@@ -392,6 +432,7 @@ class CodeSearchIndexService(private val project: Project) : Disposable {
         reindexAlarm.cancelAllRequests()
         (embedder as? AutoCloseable)?.let { runCatching { it.close() } }
         reranker?.let { runCatching { it.close() } }
+        runCatching { chunker.close() }
     }
 
     companion object {

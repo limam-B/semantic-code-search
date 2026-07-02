@@ -114,6 +114,6 @@ class VectorStore(val dimension: Int) {
     }
 
     companion object {
-        private const val MAGIC = 0x4A435357   // "JCSV" v2 — chunk code now persisted (for rerank)
+        private const val MAGIC = 0x4A435358   // "JCSX" v3 — Roslyn chunker (new boundaries + XML docs); invalidates v2
     }
 }

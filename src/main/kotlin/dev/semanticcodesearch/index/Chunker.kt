@@ -5,11 +5,11 @@ import com.intellij.openapi.vfs.VirtualFile
 /**
  * Splits a source file into [CodeChunk]s.
  *
- * Why a seam (and not a PSI walk): in Rider the C# AST lives in the ReSharper *backend* and
- * is NOT reachable from a pure-Kotlin frontend plugin — so the issue's "walk the PSI" plan
- * can't see C# methods from here. The default frontend-only impl ([CSharpRegexChunker])
- * recovers method/class boundaries from text. A tree-sitter or backend-PSI chunker can be
- * dropped in later without touching the rest of the pipeline.
+ * Why a seam: Rider's C# AST lives in the ReSharper *backend*, unreachable from a pure-Kotlin
+ * frontend plugin. Rather than reach into the backend, the active impl ([RoslynChunker]) runs our
+ * own Roslyn parse in an out-of-process `dotnet` sidecar and streams chunk boundaries back. Keeping
+ * this an interface means that sidecar — or any future chunker — drops in without touching the rest
+ * of the pipeline.
  */
 interface Chunker {
     /** True if this chunker handles the given file (by extension, etc.). */

@@ -24,6 +24,9 @@ class CodeSearchSettings : PersistentStateComponent<CodeSearchSettings.State> {
         var excludedPaths: MutableList<String> = mutableListOf(),   // subpaths/names to skip within the included folders
         var cudaDir: String = "",   // CUDA 12 bin dir (has cudart64_12.dll); blank = CPU (set in Settings → GPU)
         var cudnnDir: String = "",  // cuDNN 9 bin dir (has cudnn64_9.dll); blank = CPU (set in Settings → GPU)
+        var dotnetPath: String = "",  // dotnet exe or its folder for the Roslyn C# chunker sidecar; blank = PATH
+        var mcpEnabled: Boolean = true, // expose semantic search to AI agents over a localhost HTTP MCP server
+        var mcpPort: Int = 0,           // MCP server port; 0 = auto-pick a free port on each project open
     )
 
     private var state = State()
